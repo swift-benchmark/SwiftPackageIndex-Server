@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import Foundation
 import Vapor
 import Plot
 import SPIManifest
@@ -29,12 +30,34 @@ enum ValidateSPIManifestController {
     static func validate(req: Request) async throws -> HTML {
         struct FormData: Content {
             var manifest: String
+            var manifestUrl: String?
         }
 
+        //CWE-918
+        //SOURCE
         let formData = try req.content.decode(FormData.self)
-        let validationResult = validationResult(manifest: formData.manifest)
-        let model = ValidateSPIManifest.Model(manifest: formData.manifest, validationResult: validationResult)
+        // Allow validating a manifest that is hosted remotely by pasting its URL
+        // instead of the manifest body itself.
+        let manifest = try await resolveManifest(body: formData.manifest, url: formData.manifestUrl)
+        let validationResult = validationResult(manifest: manifest)
+        let model = ValidateSPIManifest.Model(manifest: manifest, validationResult: validationResult)
         return ValidateSPIManifest.View(path: req.url.path, model: model).document()
+    }
+
+    static func resolveManifest(body: String, url: String?) async throws -> String {
+        guard let url, !url.isEmpty else { return body }
+        return try await fetchRemoteManifest(from: url)
+    }
+
+    static func fetchRemoteManifest(from location: String) async throws -> String {
+        let trimmed = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed) else {
+            throw Abort(.badRequest, reason: "Invalid manifest URL")
+        }
+        //CWE-918
+        //SINK
+        let (data, _) = try await URLSession.shared.data(from: url)
+        return String(decoding: data, as: UTF8.self)
     }
 
     static func validationResult(manifest: String) -> ValidateSPIManifest.ValidationResult {

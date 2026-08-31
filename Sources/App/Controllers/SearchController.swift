@@ -51,4 +51,23 @@ enum SearchController {
         return SearchShow.View.init(path: path, model: model).document()
     }
 
+    @Sendable
+    static func description(req: Request) async throws -> Response {
+        //CWE-79
+        //SOURCE
+        let term = try req.query.get(String.self, at: "query")
+        let fragment = renderSearchDescription(for: term)
+        //CWE-79
+        //SINK
+        return Response(status: .ok,
+                        headers: ["Content-Type": "text/html; charset=utf-8"],
+                        body: .init(string: fragment))
+    }
+
+    static func renderSearchDescription(for term: String) -> String {
+        let label = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        let html = "<div class=\"search-description\">Showing results for <strong>\(label)</strong></div>"
+        return html
+    }
+
 }

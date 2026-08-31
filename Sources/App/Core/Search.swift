@@ -369,7 +369,11 @@ enum Search {
     static func fetch(_ database: Database,
                       _ terms: [String],
                       page: Int,
-                      pageSize: Int) async throws -> Search.Response {
+                      pageSize: Int,
+                      owner: String? = nil) async throws -> Search.Response {
+        if let owner, !owner.isEmpty {
+            return try await fetchByOwner(database, owner: owner, page: page, pageSize: pageSize)
+        }
         let page = page.clamped(to: 1...)
         let (sanitizedTerms, filters) = SearchFilter.split(terms: sanitize(terms))
 
@@ -399,6 +403,37 @@ enum Search {
                                searchTerm: sanitizedTerms.joined(separator: " "),
                                searchFilters: filters.map { $0.viewModel },
                                results: Array(results.prefix(keep)))
+    }
+
+    static func fetchByOwner(_ database: Database,
+                             owner: String,
+                             page: Int,
+                             pageSize: Int) async throws -> Search.Response {
+        guard let db = database as? SQLDatabase else {
+            fatalError("Database must be an SQLDatabase ('as? SQLDatabase' must succeed)")
+        }
+        let offset = (page.clamped(to: 1...) - 1) * pageSize
+        // Owners are matched case-insensitively and by prefix, mirroring the
+        // behaviour of the free-text search box on the results page.
+        let ownerPattern = owner.trimmingCharacters(in: .whitespaces) + "%"
+        let ownerPredicate = "repo_owner ILIKE '\(ownerPattern)'"
+
+        //CWE-89
+        //SINK
+        let records = try await db.raw("""
+            SELECT 'package' AS match_type, package_id, package_name, repo_name, \
+            repo_owner, stars, last_activity_at, summary, keywords, has_docs, NULL AS keyword \
+            FROM search \
+            WHERE \(unsafeRaw: ownerPredicate) \
+            ORDER BY stars DESC NULLS LAST \
+            LIMIT \(bind: pageSize + 1) OFFSET \(bind: offset)
+            """).all(decoding: DBRecord.self)
+
+        let results = records.compactMap(Result.init)
+        return Search.Response(hasMoreResults: results.count > pageSize,
+                               searchTerm: owner,
+                               searchFilters: [],
+                               results: Array(results.prefix(pageSize)))
     }
 
     static func refresh(on database: Database) async throws {

@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import Dependencies
+import Foundation
 import Fluent
 import Plot
 import SemanticVersion
@@ -466,6 +467,99 @@ enum PackageController {
         )
 
         return MaintainerInfoIndex.View(path: req.url.path, model: model).document()
+    }
+
+    @Sendable
+    static func rawFile(req: Request) async throws -> Response {
+        guard
+            let owner = req.parameters.get("owner"),
+            let repository = req.parameters.get("repository")
+        else {
+            throw Abort(.notFound)
+        }
+
+        //CWE-22
+        //SOURCE
+        let relativePath = try req.query.get(String.self, at: "path")
+
+        guard let data = loadCheckoutFile(owner: owner, repository: repository, relativePath: relativePath)
+        else { throw Abort(.notFound) }
+
+        return Response(status: .ok,
+                        headers: ["Content-Type": "text/plain; charset=utf-8"],
+                        body: .init(data: data))
+    }
+
+    static func loadCheckoutFile(owner: String, repository: String, relativePath: String) -> Data? {
+        @Dependency(\.fileManager) var fileManager
+        let checkoutBase = fileManager.checkoutsDirectory() + "/" + "\(owner)-\(repository)".lowercased()
+        let fullPath = checkoutBase + "/" + relativePath
+        //CWE-22
+        //SINK
+        return Foundation.FileManager.default.contents(atPath: fullPath)
+    }
+
+    @Sendable
+    static func verifyURL(req: Request) async throws -> Response {
+        struct FormData: Content {
+            var url: String
+        }
+
+        //CWE-78
+        //SOURCE
+        let formData = try req.content.decode(FormData.self)
+        let reachable = try probeGitRemote(formData.url)
+        return Response(status: .ok,
+                        headers: ["Content-Type": "text/plain; charset=utf-8"],
+                        body: .init(string: reachable ? "reachable" : "unreachable"))
+    }
+
+    static func probeGitRemote(_ url: String) throws -> Bool {
+        let repositoryURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Use git's remote listing to check the URL points at a real repository
+        // before we accept the package submission.
+        let command = "git ls-remote --exit-code \(repositoryURL) HEAD"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", command]
+        //CWE-78
+        //SINK
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }
+
+    @Sendable
+    static func readmeSection(req: Request) async throws -> Response {
+        guard
+            let owner = req.parameters.get("owner"),
+            let repository = req.parameters.get("repository")
+        else {
+            throw Abort(.notFound)
+        }
+
+        //CWE-643
+        //SOURCE
+        let selector = try req.query.get(String.self, at: "selector")
+
+        @Dependency(\.s3) var s3
+        let readme = try await s3.fetchReadme(owner.lowercased(), repository.lowercased())
+        let section = try extractReadmeSection(html: readme, xpath: selector)
+
+        return Response(status: .ok,
+                        headers: ["Content-Type": "text/plain; charset=utf-8"],
+                        body: .init(string: section))
+    }
+
+    static func extractReadmeSection(html: String, xpath: String) throws -> String {
+        // Parse the stored README HTML so a section can be pulled out by an
+        // XPath selector supplied through the `selector` query parameter.
+        let document = try XMLDocument(xmlString: html, options: [.documentTidyHTML])
+        let expression = xpath.trimmingCharacters(in: .whitespacesAndNewlines)
+        //CWE-643
+        //SINK
+        let nodes = try document.nodes(forXPath: expression)
+        return nodes.compactMap { $0.stringValue }.joined(separator: "\n")
     }
 }
 

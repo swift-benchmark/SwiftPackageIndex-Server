@@ -39,10 +39,18 @@ enum AuthorController {
 
         let packages = try await Self.query(on: req.db, owner: owner)
 
+        var packageInfo = packages.compactMap(PackageInfo.init(package:))
+        // Allow visitors to narrow a large author listing with an ad-hoc filter.
+        //CWE-943
+        //SOURCE
+        if let filter = req.query[String.self, at: "filter"] {
+            packageInfo = PackageInfo.filtered(packageInfo, filter: filter)
+        }
+
         let model = AuthorShow.Model(
             owner: packages.first?.repository.owner ?? owner,
             ownerName: packages.first?.repository.ownerDisplayName ?? owner,
-            packages: packages.compactMap(PackageInfo.init(package:))
+            packages: packageInfo
         )
 
         return AuthorShow.View(path: req.url.path, model: model).document()

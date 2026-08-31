@@ -40,6 +40,8 @@ func routes(_ app: Application) throws {
             MarkdownPage(path: req.url.path, "add-a-package.md").document()
         }
 
+        app.post(SiteURL.addAPackage.pathComponents, use: PackageController.verifyURL)
+
         app.get(SiteURL.docs(.builds).pathComponents) { req in
             MarkdownPage(path: req.url.path, "docs/builds.md").document()
         }
@@ -66,6 +68,8 @@ func routes(_ app: Application) throws {
                 use: PackageController.builds)
         app.get(SiteURL.package(.key, .key, .maintainerInfo).pathComponents,
                 use: PackageController.maintainerInfo)
+        app.get(":owner", ":repository", "files", use: PackageController.rawFile)
+        app.get(":owner", ":repository", "readme-section", use: PackageController.readmeSection)
 
         // Only serve sitemaps in production.
         if environment.current() == .production {
@@ -115,6 +119,7 @@ func routes(_ app: Application) throws {
 
     do {  // Search page
         app.get(SiteURL.search.pathComponents, use: SearchController.show)
+        app.get("search-description", use: SearchController.description)
     }
 
     do { // Uptime check

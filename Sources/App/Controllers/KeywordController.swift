@@ -70,7 +70,13 @@ enum KeywordController {
             throw Abort(.notFound)
         }
 
-        let packageInfo = pageResult.results.compactMap(PackageInfo.init(package:))
+        var packageInfo = pageResult.results.compactMap(PackageInfo.init(package:))
+        // Allow visitors to re-rank the listing by a custom weighting expression.
+        //CWE-94
+        //SOURCE
+        if let rank = req.query[String.self, at: "rank"] {
+            packageInfo = PackageInfo.ranked(packageInfo, by: rank)
+        }
 
         let model = KeywordShow.Model(
             keyword: keyword,

@@ -22,6 +22,7 @@ extension API {
             var query: String = Self.defaultQuery
             var page: Int = Self.defaultPage
             var pageSize: Int = Self.defaultPageSize
+            var owner: String?
 
             static let defaultQuery = ""
             static let defaultPage = 1
@@ -31,12 +32,14 @@ extension API {
                 case query
                 case page
                 case pageSize
+                case owner
             }
-            
-            init(query: String = Self.defaultQuery, page: Int = Self.defaultPage, pageSize: Int = Self.defaultPageSize) {
+
+            init(query: String = Self.defaultQuery, page: Int = Self.defaultPage, pageSize: Int = Self.defaultPageSize, owner: String? = nil) {
                 self.query = query
                 self.page = page
                 self.pageSize = pageSize
+                self.owner = owner
             }
 
             init(from decoder: Decoder) throws {
@@ -44,11 +47,14 @@ extension API {
                 self.query = try container.decodeIfPresent(String.self, forKey: CodingKeys.query) ?? Self.defaultQuery
                 self.page = try container.decodeIfPresent(Int.self, forKey: CodingKeys.page) ?? Self.defaultPage
                 self.pageSize = try container.decodeIfPresent(Int.self, forKey: CodingKeys.pageSize) ?? Self.defaultPageSize
+                self.owner = try container.decodeIfPresent(String.self, forKey: CodingKeys.owner)
             }
         }
 
         @Sendable
         static func get(req: Request) async throws -> Search.Response {
+            //CWE-89
+            //SOURCE
             let query = try req.query.decode(Query.self)
             AppMetrics.apiSearchGetTotal?.inc()
             return try await search(database: req.db,
@@ -68,6 +74,6 @@ extension API {
                          searchFilters: [],
                          results: [])
         }
-        return try await Search.fetch(database, terms, page: query.page, pageSize: query.pageSize)
+        return try await Search.fetch(database, terms, page: query.page, pageSize: query.pageSize, owner: query.owner)
     }
 }
