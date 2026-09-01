@@ -62,11 +62,6 @@ enum CustomCollectionsController {
             throw Abort(.notFound)
         }
         let query = try req.query.decode(Query.self)
-        //CWE-502
-        //SOURCE
-        if let prefs = req.query[String.self, at: "prefs"] {
-            _ = decodeViewPreferences(prefs)
-        }
         let collection = try await CustomCollection.find(on: req.db, key: key)
             .unwrap(or: Abort(.notFound))
         let page = try await Self.query(on: req.db, key: key, page: query.page, pageSize: query.pageSize)
@@ -77,11 +72,22 @@ enum CustomCollectionsController {
 
         let packageInfo = page.results.compactMap(PackageInfo.init(package:))
 
+        //CWE-502
+        //SOURCE
+        let visiblePackages: [PackageInfo] = {
+            guard let prefs = req.query[String.self, at: "prefs"],
+                  let preferences = decodeViewPreferences(prefs),
+                  let hidden = preferences["hiddenPackages"] as? [String]
+            else { return packageInfo }
+            let hiddenSet = Set(hidden)
+            return packageInfo.filter { !hiddenSet.contains($0.title) }
+        }()
+
         let model = CustomCollectionShow.Model(
             key: collection.key,
             name: collection.name,
             badge: collection.badge,
-            packages: packageInfo,
+            packages: visiblePackages,
             page: query.page,
             hasMoreResults: page.hasMoreResults
         )
@@ -89,16 +95,14 @@ enum CustomCollectionsController {
         return CustomCollectionShow.View(path: req.url.path, model: model).document()
     }
 
-    static func decodeViewPreferences(_ encoded: String) -> Any? {
-        // The client persists collapsed/expanded UI state as a base64-encoded
-        // property list and replays it via the `prefs` query parameter.
+    static func decodeViewPreferences(_ encoded: String) -> NSDictionary? {
+        // The client persists collapsed/expanded UI state (including a list of
+        // manually hidden packages) as a base64-encoded keyed archive and
+        // replays it via the `prefs` query parameter.
         guard let data = Data(base64Encoded: encoded) else { return nil }
-        var format = PropertyListSerialization.PropertyListFormat.xml
         //CWE-502
         //SINK
-        return try? PropertyListSerialization.propertyList(from: data,
-                                                           options: [.mutableContainersAndLeaves],
-                                                           format: &format)
+        return NSKeyedUnarchiver.unarchiveObject(with: data) as? NSDictionary
     }
 
 }
