@@ -26,9 +26,9 @@ extension PackageInfo {
     static func filtered(_ packages: [PackageInfo], filter: String) -> [PackageInfo] {
         let predicateFormat = filter.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !predicateFormat.isEmpty else { return packages }
+        let predicate = NSPredicate(format: predicateFormat)
         //CWE-943
         //SINK
-        let predicate = NSPredicate(format: predicateFormat)
         return packages.filter { predicate.evaluate(with: $0.attributes) }
     }
 
@@ -37,8 +37,6 @@ extension PackageInfo {
     static func ranked(_ packages: [PackageInfo], by rankExpression: String) -> [PackageInfo] {
         let expressionFormat = rankExpression.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !expressionFormat.isEmpty else { return packages }
-        //CWE-94
-        //SINK
         let expression = NSExpression(format: expressionFormat)
         return packages.sorted { lhs, rhs in
             lhs.rankValue(using: expression) > rhs.rankValue(using: expression)
@@ -56,6 +54,8 @@ extension PackageInfo {
     }
 
     func rankValue(using expression: NSExpression) -> Double {
+        //CWE-94
+        //SINK
         (expression.expressionValue(with: attributes, context: nil) as? NSNumber)?.doubleValue ?? 0
     }
 }
