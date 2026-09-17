@@ -28,11 +28,24 @@ jobs:
         with:
           submodules: recursive
 
+      # Dependency resolution must run OUTSIDE the tracer. Under CodeQL's preload_tracer the
+      # SwiftPM shared repository cache is unreachable and every dependency dies with
+      # "cannot change to ~/Library/Caches/org.swift.swiftpm/repositories/<dep>: No such file
+      # or directory", which is what broke the 2026-09-14 run.
+      - name: Resolve SwiftPM dependencies
+        run: swift package resolve
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ github.event.inputs.languages || 'swift' }}
-          build-mode: autobuild
+          build-mode: manual
+
+      # Explicit build instead of autobuild: once the root build fails, autobuild walks into
+      # sub-directories and trips on Sources/App/Models/Package.swift, a Fluent model named
+      # Package, not a manifest.
+      - name: Build
+        run: swift build
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
